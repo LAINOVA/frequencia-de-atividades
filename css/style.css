@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+body {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+[v-cloak] {
+    display: none !important;
+}
+
+.carregando-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.85);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: #0f172a;
+    backdrop-filter: blur(2px);
+}
+
+.print-only {
+    display: none !important;
+}
+
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 12mm 14mm 14mm 14mm;
+    }
+
+    *, *:before, *:after {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+
+    html, body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 10pt !important;
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    #app, main {
+        display: block !important;
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    aside, header, .no-print, [class*="no-print"] {
+        display: none !important;
+    }
+
+    .print-only {
+        display: block !important;
+    }
+
+    .print-avoid-break, .print-card, .bg-white, table, tr, figure {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+    }
+
+    .overflow-x-auto, .overflow-y-auto, [class*="overflow-"], [class*="max-h-"] {
+        overflow: visible !important;
+        max-height: none !important;
+        height: auto !important;
+    }
+
+    .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+        box-shadow: none !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+
+    .rounded-xl, .rounded-2xl {
+        border-radius: 8px !important;
+    }
+
+    canvas {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    .chart-container-print {
+        height: 220px !important;
+        width: 100% !important;
+        position: relative !important;
+    }
+
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+    }
+
+    th {
+        background-color: #f8fafc !important;
+        color: #475569 !important;
+        font-size: 8.5pt !important;
+        border-bottom: 1.5px solid #cbd5e1 !important;
+        padding: 6px 8px !important;
+    }
+
+    td {
+        font-size: 8.5pt !important;
+        border-bottom: 1px solid #f1f5f9 !important;
+        padding: 6px 8px !important;
+    }
+}

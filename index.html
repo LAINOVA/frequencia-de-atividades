@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAINOVA - Gestão de Atividades</title>
+    
+    <!-- Bibliotecas Externas (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Estilos Customizados -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-slate-50 text-slate-800 overflow-hidden h-screen flex">
+
+<div id="app" v-cloak class="w-full h-full relative">
+
+    <!-- CONTAINER GLOBAL DE TOASTS -->
+    <toast-container :toasts="toasts" @fechar-toast="fecharToast"></toast-container>
+
+    <!-- MODAL DE CONFIRMAÇÃO GLOBAL (Substitui confirm()) -->
+    <modal-confirmacao 
+        :aberto="modalConfirmacao.aberto"
+        :titulo="modalConfirmacao.titulo"
+        :mensagem="modalConfirmacao.mensagem"
+        :tipo="modalConfirmacao.tipo"
+        :texto-confirmar="modalConfirmacao.textoConfirmar"
+        :texto-cancelar="modalConfirmacao.textoCancelar"
+        :carregando="modalConfirmacao.carregando"
+        @confirmar="executarConfirmacao"
+        @cancelar="modalConfirmacao.aberto = false">
+    </modal-confirmacao>
+
+    <!-- MODAL DE ALTERAÇÃO DE SENHA / PRIMEIRO ACESSO -->
+    <modal-alterar-senha
+        :aberto="modalSenhaAberto"
+        :primeiro-acesso="primeiroAcessoObrigatorio"
+        :enviando="enviandoSenha"
+        :erro="erroSenha"
+        @salvar-senha="salvarNovaSenha"
+        @fechar="modalSenhaAberto = false">
+    </modal-alterar-senha>
+
+    <!-- TELA DE LOGIN -->
+    <login-view 
+        v-if="!usuarioAutenticado" 
+        :carregando-login="carregandoLogin" 
+        :mensagem-erro="mensagemErroLogin"
+        :mensagem-sucesso="mensagemSucessoLogin"
+        @fazer-login="fazerLogin">
+    </login-view>
+
+    <!-- PAINEL PRINCIPAL (Autenticado) -->
+    <div v-else class="flex w-full h-full relative">
+        
+        <!-- Tela de Carregamento Global -->
+        <div v-if="carregandoDados" class="carregando-overlay">
+            <i class="fa-solid fa-circle-notch fa-spin text-4xl text-emerald-600 mb-4"></i>
+            <p>A sincronizar com a base de dados...</p>
+        </div>
+
+        <!-- MENU LATERAL -->
+        <app-sidebar 
+            :abas="abas" 
+            :aba-atual="abaAtual" 
+            :menu-mobile-aberto="menuMobileAberto"
+            :cargo-usuario="usuarioAtual.cargo"
+            @mudar-aba="mudarAba" 
+            @fechar-menu="menuMobileAberto = false"
+            @fazer-logout="fazerLogout">
+        </app-sidebar>
+
+        <!-- ÁREA PRINCIPAL -->
+        <main class="flex-1 flex flex-col h-full overflow-hidden relative w-full">
+            
+            <!-- CABEÇALHO -->
+            <app-header 
+                :titulo-aba-atual="tituloAbaAtual" 
+                :hora-formatada="horaFormatada" 
+                :data-formatada="dataFormatada"
+                :usuario="usuarioAtual"
+                @abrir-menu="menuMobileAberto = true"
+                @fazer-logout="fazerLogout"
+                @abrir-alterar-senha="modalSenhaAberto = true">
+            </app-header>
+
+            <!-- CONTAINER DE TELAS -->
+            <div class="flex-1 overflow-y-auto p-4 md:p-8">
+                
+                <!-- TELA 1: DASHBOARD -->
+                <dashboard-view 
+                    v-if="abaAtual === 'dashboard'"
+                    :membros="membros" 
+                    :acumulado-membros="acumuladoMembros"
+                    :total-horas-geral="totalHorasGeral"
+                    :total-lancamentos="totalLancamentos"
+                    :cargo-usuario="usuarioAtual.cargo">
+                </dashboard-view>
+
+                <!-- TELA 2: REGISTAR HORAS -->
+                <registrar-view 
+                    v-if="abaAtual === 'registrar'"
+                    :projetos="projetos"
+                    :categorias="categorias"
+                    :modo-registro="modoRegistro"
+                    :form="form"
+                    :duracao-calculada-horas="duracaoCalculadaHoras"
+                    :enviando-registro="enviandoRegistro"
+                    :timer-ativo="timerAtivo"
+                    :cronometro-display="cronometroDisplay"
+                    :usuario="usuarioAtual"
+                    @mudar-modo="modoRegistro = $event"
+                    @salvar-registro="salvarRegistro"
+                    @iniciar-cronometro="iniciarCronometro"
+                    @parar-cronometro="pararCronometro">
+                </registrar-view>
+
+                <!-- TELA 3: HISTÓRICO (Com Paginação Real Backend) -->
+                <historico-view 
+                    v-if="abaAtual === 'historico'"
+                    :registros="registros"
+                    :paginacao="paginacaoHistorico"
+                    :filtro-membro="filtroMembroHistorico"
+                    :formatar-data-sheet="formatarDataSheet"
+                    :cargo-usuario="usuarioAtual.cargo"
+                    :membros="membros"
+                    :pode-editar-excluir="podeEditarExcluir"
+                    :carregando="carregandoDados"
+                    @abrir-edicao="abrirEdicaoRegistro"
+                    @solicitar-exclusao="solicitarExclusaoRegistro"
+                    @mudar-pagina="mudarPaginaHistorico"
+                    @mudar-filtro-membro="mudarFiltroMembroHistorico">
+                </historico-view>
+
+                <!-- TELA 4: GRÁFICOS & ANÁLISES (Admin/Gestor) -->
+                <graficos-view 
+                    v-if="abaAtual === 'graficos' && usuarioAtual.cargo !== 'FUNCIONARIO'"
+                    :registros="registros"
+                    :periodo-grafico="periodoGrafico"
+                    :usuario="usuarioAtual"
+                    @mudar-periodo="mudarPeriodoGrafico">
+                </graficos-view>
+
+                <!-- TELA 5: PROJETOS & CATEGORIAS (Admin/Gestor) -->
+                <projetos-categorias-view 
+                    v-if="abaAtual === 'projetos_categorias' && usuarioAtual.cargo !== 'FUNCIONARIO'"
+                    :projetos="projetos"
+                    :categorias="categorias"
+                    :carregando="carregandoProjetosCategorias"
+                    @adicionar-projeto="adicionarProjeto"
+                    @excluir-projeto="excluirProjeto"
+                    @adicionar-categoria="adicionarCategoria"
+                    @excluir-categoria="excluirCategoria">
+                </projetos-categorias-view>
+
+                <!-- TELA 6: GERADOR DE RELATÓRIOS (Admin/Gestor) -->
+                <relatorios-view 
+                    v-if="abaAtual === 'relatorios' && usuarioAtual.cargo !== 'FUNCIONARIO'"
+                    :membros="membros"
+                    :filtro-relatorio="filtroRelatorio"
+                    :periodo-relatorio-texto="periodoRelatorioTexto"
+                    :kpis-relatorio="kpisRelatorio"
+                    :ranking-relatorio="rankingRelatorio"
+                    :registros-relatorio="registrosRelatorio"
+                    :registros-relatorio-ordenados="registrosRelatorioOrdenados"
+                    :formatar-data-sheet="formatarDataSheet"
+                    @aplicar-filtro-rapido="aplicarFiltroRapido"
+                    @exportar-csv="exportarCSV"
+                    @imprimir-relatorio="imprimirRelatorio">
+                </relatorios-view>
+
+                <!-- TELA 7: GESTÃO DE MEMBROS (Apenas Admin) -->
+                <membros-view 
+                    v-if="abaAtual === 'membros' && usuarioAtual.cargo === 'ADMINISTRADOR'"
+                    :membros="membros"
+                    @abrir-modal="modalMembroAberto = true"
+                    @alternar-status="alternarStatusMembro"
+                    @remover-membro="removerMembro">
+                </membros-view>
+
+            </div>
+        </main>
+
+        <!-- MODAL: CADASTRAR MEMBRO (Apenas Admin) -->
+        <modal-membro 
+            v-if="usuarioAtual.cargo === 'ADMINISTRADOR'"
+            :modal-membro-aberto="modalMembroAberto"
+            :enviando-membro="enviandoMembro"
+            @fechar-modal="modalMembroAberto = false"
+            @salvar-membro="salvarMembro">
+        </modal-membro>
+
+        <!-- MODAL: EDITAR REGISTRO DE HORAS (Admin/Gestor) -->
+        <modal-editar-registro
+            :modal-aberto="modalEdicaoAberto"
+            :registro="registroParaEdicao"
+            :projetos="projetos"
+            :categorias="categorias"
+            :enviando="enviandoEdicao"
+            @fechar="modalEdicaoAberto = false"
+            @salvar-edicao="salvarEdicaoRegistro">
+        </modal-editar-registro>
+
+    </div>
+
+</div>
+
+<!-- Scripts Carregados Sequencialmente -->
+<script src="js/config.js"></script>
+<script src="js/components/ToastContainer.js"></script>
+<script src="js/components/ModalConfirmacao.js"></script>
+<script src="js/components/ModalAlterarSenha.js"></script>
+<script src="js/components/LoginView.js"></script>
+<script src="js/components/Sidebar.js"></script>
+<script src="js/components/Header.js"></script>
+<script src="js/components/DashboardView.js"></script>
+<script src="js/components/GraficosView.js"></script>
+<script src="js/components/ProjetosCategoriasView.js"></script>
+<script src="js/components/RegistrarView.js"></script>
+<script src="js/components/MembrosView.js"></script>
+<script src="js/components/HistoricoView.js"></script>
+<script src="js/components/RelatoriosView.js"></script>
+<script src="js/components/ModalMembro.js"></script>
+<script src="js/components/ModalEditarRegistro.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
