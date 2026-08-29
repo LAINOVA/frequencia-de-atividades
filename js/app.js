@@ -5,6 +5,7 @@ const app = createApp({
         'toast-container': window.ToastContainerComponent,
         'modal-confirmacao': window.ModalConfirmacaoComponent,
         'modal-alterar-senha': window.ModalAlterarSenhaComponent,
+        'modal-admin-reset-senha': window.ModalAdminResetSenhaComponent,
         'login-view': window.LoginViewComponent,
         'app-sidebar': window.SidebarComponent,
         'app-header': window.HeaderComponent,
@@ -16,167 +17,166 @@ const app = createApp({
         'historico-view': window.HistoricoViewComponent,
         'relatorios-view': window.RelatoriosViewComponent,
         'modal-membro': window.ModalMembroComponent,
-        'modal-editar-registro': window.ModalEditarRegistroComponent
+        'modal-editar-registro': window.ModalEditarRegistroComponent,
+        'modal-editar-lote': window.ModalEditarLoteComponent
     },
     setup() {
-        // Estado de Autenticação
+        let supabase = null;
+        if (window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
+            supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+        }
+
         const usuarioAutenticado = ref(false);
         const tokenSessao = ref(sessionStorage.getItem('lainova_session_token') || '');
-        const usuarioAtual = ref({ login: '', nome: '', cargo: '', id: '', primeiroAcesso: false });
+        const usuarioAtual = ref({ login: '', nome: '', cargo: '' });
         const carregandoLogin = ref(false);
         const mensagemErroLogin = ref('');
-        const mensagemSucessoLogin = ref('');
 
-        // Modal de Alteração de Senha & Primeiro Acesso Obrigatório
-        const modalSenhaAberto = ref(false);
-        const primeiroAcessoObrigatorio = ref(false);
-        const enviandoSenha = ref(false);
-        const erroSenha = ref('');
-
-        // Sistema de Notificações Toast
+        // Toasts
         const toasts = ref([]);
-        let toastSeq = 0;
-        const mostrarToast = (tipo, mensagem) => {
-            const id = ++toastSeq;
-            toasts.value.push({ id, tipo, mensagem });
-            setTimeout(() => fecharToast(id), 4000);
+        let toastCounter = 0;
+        const adicionarToast = (mensagem, tipo = 'info') => {
+            const id = ++toastCounter;
+            toasts.value.push({ id, mensagem, tipo });
+            setTimeout(() => removerToast(id), 4000);
         };
-        const fecharToast = (id) => {
+        const removerToast = (id) => {
             toasts.value = toasts.value.filter(t => t.id !== id);
         };
 
-        // Modal de Confirmação Customizado (Substitui confirm())
+        // Modal de Confirmação
         const modalConfirmacao = ref({
             aberto: false,
             titulo: '',
             mensagem: '',
-            tipo: 'destrutivo',
-            textoConfirmar: 'Confirmar',
-            textoCancelar: 'Cancelar',
+            textoBotao: 'Confirmar',
+            perigoso: false,
             carregando: false,
-            aoConfirmar: null
+            onConfirm: null
         });
-
-        const abrirConfirmacao = ({ titulo, mensagem, tipo = 'destrutivo', textoConfirmar = 'Confirmar', textoCancelar = 'Cancelar', aoConfirmar }) => {
-            modalConfirmacao.value = {
-                aberto: true,
-                titulo,
-                mensagem,
-                tipo,
-                textoConfirmar,
-                textoCancelar,
-                carregando: false,
-                aoConfirmar
-            };
+        const abrirConfirmacao = ({ titulo, mensagem, textoBotao = 'Confirmar', perigoso = false, onConfirm }) => {
+            modalConfirmacao.value = { aberto: true, titulo, mensagem, textoBotao, perigoso, carregando: false, onConfirm };
         };
-
+        const fecharConfirmacao = () => {
+            modalConfirmacao.value.aberto = false;
+            modalConfirmacao.value.onConfirm = null;
+        };
         const executarConfirmacao = async () => {
-            if (typeof modalConfirmacao.value.aoConfirmar === 'function') {
+            if (modalConfirmacao.value.onConfirm) {
                 modalConfirmacao.value.carregando = true;
                 try {
-                    await modalConfirmacao.value.aoConfirmar();
-                    modalConfirmacao.value.aberto = false;
+                    await modalConfirmacao.value.onConfirm();
+                    fecharConfirmacao();
                 } catch (e) {
-                    mostrarToast('erro', e.message || 'Erro ao processar ação.');
-                } finally {
                     modalConfirmacao.value.carregando = false;
                 }
-            } else {
-                modalConfirmacao.value.aberto = false;
             }
         };
 
-        // Navegação
+        // Modais de Senha
+        const modalSenhaAberto = ref(false);
+        const primeiroAcessoObrigatorio = ref(false);
+        const enviandoSenha = ref(false);
+
+        const modalAdminResetAberto = ref(false);
+        const membroResetSelecionado = ref({});
+        const enviandoAdminReset = ref(false);
+
+        // Navegação e Estado
         const abas = ref(window.ABAS_NAVEGACAO);
         const abaAtual = ref('dashboard');
         const menuMobileAberto = ref(false);
         const carregandoDados = ref(false);
         const enviandoRegistro = ref(false);
         const enviandoMembro = ref(false);
-        const carregandoProjetosCategorias = ref(false);
-        const modalMembroAberto = ref(false);
 
-        // Modal de Edição de Registro
-        const modalEdicaoAberto = ref(false);
-        const registroParaEdicao = ref({});
-        const enviandoEdicao = ref(false);
-
-        // Relógio e Data
+        // Relógio
         const dataAtualObj = ref(new Date());
         let intervalRelogio;
         const horaFormatada = computed(() => dataAtualObj.value.toLocaleTimeString('pt-PT'));
         const dataFormatada = computed(() => new Intl.DateTimeFormat('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(dataAtualObj.value));
 
-        // Dados da Aplicação
+        // Dados
         const membros = ref([]);
         const registros = ref([]);
-        const projetos = ref(['Atividade']);
-        const categorias = ref(['Ensino', 'Pesquisa', 'Extensão', 'Reuniões', 'Evento', 'Divulgação', 'Administrativo', 'Projeto', 'Outros']);
+        const todosRegistros = ref([]);
+        const projetos = ref([]);
+        const categorias = ref(window.CATEGORIAS_ATIVIDADES);
+        const filtroMembroHist = ref('');
+        const acumuladoMembros = ref([]);
+        const totalHorasGeral = ref('0.0');
+        const paginacao = ref({ paginaAtual: 1, limite: 100, totalRegistros: 0, totalPaginas: 1, temProximaPagina: false, temPaginaAnterior: false, de: 0, ate: 0 });
 
-        // Paginação do Histórico (Backend)
-        const paginacaoHistorico = ref({
-            paginaAtual: 1,
-            limite: 100,
-            totalRegistros: 0,
-            totalPaginas: 1,
-            temProximaPagina: false,
-            temPaginaAnterior: false,
-            de: 0,
-            ate: 0
-        });
-        const filtroMembroHistorico = ref('');
-
-        const podeEditarExcluir = computed(() => {
-            return usuarioAtual.value.cargo === 'ADMINISTRADOR' || usuarioAtual.value.cargo === 'GESTOR';
-        });
-
-        // Comunicação Segura com o Backend
-        const chamarBackend = async (payload) => {
-            const res = await fetch(window.API_URL, {
-                method: "POST",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (data.sessaoInvalida) {
-                fazerLogout();
-                throw new Error("Sessão expirada ou acesso revogado. Por favor, inicie sessão novamente.");
+        // Comunicação Supabase RPC
+        const chamarBackend = async (acao, params = {}) => {
+            if (!supabase) {
+                throw new Error("Cliente Supabase não configurado. Verifique js/config.js.");
             }
-            if (data.sucesso === false && data.erro) {
+
+            const mapRpc = {
+                'login': 'api_login',
+                'logout': 'api_logout',
+                'validarSessao': 'api_validar_sessao',
+                'alterarSenha': 'api_alterar_senha',
+                'adminAlterarSenha': 'api_admin_alterar_senha_usuario',
+                'obterDados': 'api_obter_dados',
+                'inserir': 'api_inserir_registro',
+                'inserirLote': 'api_inserir_registros_lote',
+                'editarRegistro': 'api_editar_registro',
+                'editarRegistrosLote': 'api_editar_registros_lote',
+                'excluirRegistro': 'api_excluir_registro',
+                'excluirRegistrosLote': 'api_excluir_registros_lote',
+                'adicionarProjeto': 'api_adicionar_projeto',
+                'excluirProjeto': 'api_excluir_projeto',
+                'adicionarCategoria': 'api_adicionar_categoria',
+                'excluirCategoria': 'api_excluir_categoria',
+                'adicionarUsuario': 'api_adicionar_usuario',
+                'alternarStatusUsuario': 'api_alternar_status_usuario',
+                'excluirUsuario': 'api_excluir_usuario'
+            };
+
+            const rpcName = mapRpc[acao];
+            if (!rpcName) throw new Error("Ação não mapeada no Supabase: " + acao);
+
+            const { data, error } = await supabase.rpc(rpcName, params);
+            if (error) {
+                throw new Error(error.message || "Erro na consulta ao Supabase.");
+            }
+
+            if (data && data.sessaoInvalida) {
+                fazerLogout();
+                throw new Error("Sessão expirada. Por favor, inicie sessão novamente.");
+            }
+
+            if (data && data.sucesso === false && data.erro) {
                 throw new Error(data.erro);
             }
+
             return data;
         };
 
         const fazerLogin = async ({ login, senha }) => {
             carregandoLogin.value = true;
             mensagemErroLogin.value = '';
-            mensagemSucessoLogin.value = '';
             try {
-                const res = await chamarBackend({ acao: 'login', login, senha });
+                const res = await chamarBackend('login', { p_login: login, p_senha: senha });
                 tokenSessao.value = res.token;
                 sessionStorage.setItem('lainova_session_token', res.token);
-                usuarioAtual.value = { 
-                    login: res.login, 
-                    nome: res.nome, 
-                    cargo: res.cargo, 
-                    id: res.id || '',
-                    primeiroAcesso: !!res.primeiroAcesso
-                };
+                usuarioAtual.value = { id: res.id, login: res.login, nome: res.nome, cargo: res.cargo };
                 usuarioAutenticado.value = true;
-
-                // Se for primeiro acesso, bloqueia e exige nova senha
+                
                 if (res.primeiroAcesso) {
                     primeiroAcessoObrigatorio.value = true;
                     modalSenhaAberto.value = true;
-                    mostrarToast('aviso', 'Primeiro acesso detectado. Defina a sua palavra-passe definitiva.');
                 } else {
                     abaAtual.value = 'dashboard';
-                    await fetchDados(1);
-                    mostrarToast('sucesso', `Bem-vindo(a), ${res.nome}!`);
                 }
+
+                adicionarToast(`Bem-vindo, ${res.nome}!`, 'sucesso');
+                await fetchDados();
             } catch (err) {
                 mensagemErroLogin.value = err.message || 'Login ou senha inválidos.';
+                adicionarToast(mensagemErroLogin.value, 'erro');
             } finally {
                 carregandoLogin.value = false;
             }
@@ -185,42 +185,33 @@ const app = createApp({
         const fazerLogout = async () => {
             if (tokenSessao.value) {
                 try {
-                    await fetch(window.API_URL, {
-                        method: "POST",
-                        headers: { "Content-Type": "text/plain;charset=utf-8" },
-                        body: JSON.stringify({ acao: 'logout', token: tokenSessao.value })
-                    });
-                } catch (e) { /* ignore */ }
+                    await chamarBackend('logout', { p_token: tokenSessao.value });
+                } catch (e) {}
             }
             tokenSessao.value = '';
             sessionStorage.removeItem('lainova_session_token');
             usuarioAutenticado.value = false;
-            usuarioAtual.value = { login: '', nome: '', cargo: '', id: '', primeiroAcesso: false };
-            modalSenhaAberto.value = false;
-            primeiroAcessoObrigatorio.value = false;
+            usuarioAtual.value = { login: '', nome: '', cargo: '' };
             membros.value = [];
             registros.value = [];
+            projetos.value = [];
+            adicionarToast('Sessão encerrada.', 'info');
         };
 
         const verificarSessaoInicial = async () => {
             if (!tokenSessao.value) return;
             carregandoDados.value = true;
             try {
-                const res = await chamarBackend({ acao: 'validarSessao', token: tokenSessao.value });
-                usuarioAtual.value = { 
-                    login: res.login, 
-                    nome: res.nome, 
-                    cargo: res.cargo, 
-                    id: res.id || '',
-                    primeiroAcesso: !!res.primeiroAcesso
-                };
+                const res = await chamarBackend('validarSessao', { p_token: tokenSessao.value });
+                usuarioAtual.value = { id: res.id, login: res.login, nome: res.nome, cargo: res.cargo };
                 usuarioAutenticado.value = true;
+                
                 if (res.primeiroAcesso) {
                     primeiroAcessoObrigatorio.value = true;
                     modalSenhaAberto.value = true;
-                } else {
-                    await fetchDados(1);
                 }
+
+                await fetchDados();
             } catch (err) {
                 fazerLogout();
             } finally {
@@ -228,223 +219,408 @@ const app = createApp({
             }
         };
 
-        // Alterar Senha
-        const salvarNovaSenha = async ({ senhaAtual, novaSenha, confirmarSenha, primeiroAcesso }) => {
+        const salvarAlteracaoSenha = async ({ senhaAtual, novaSenha, primeiroAcesso }) => {
             enviandoSenha.value = true;
-            erroSenha.value = '';
             try {
-                await chamarBackend({
-                    acao: 'alterarSenha',
-                    token: tokenSessao.value,
-                    senhaAtual,
-                    novaSenha,
-                    confirmarSenha,
-                    primeiroAcesso
+                const res = await chamarBackend('alterarSenha', {
+                    p_token: tokenSessao.value,
+                    p_senha_atual: senhaAtual,
+                    p_nova_senha: novaSenha,
+                    p_primeiro_acesso: !!primeiroAcesso
                 });
+                adicionarToast(res.mensagem || 'Palavra-passe alterada com sucesso!', 'sucesso');
                 modalSenhaAberto.value = false;
                 primeiroAcessoObrigatorio.value = false;
-                usuarioAtual.value.primeiroAcesso = false;
-                mostrarToast('sucesso', 'Palavra-passe atualizada com sucesso!');
-                if (primeiroAcesso) {
-                    abaAtual.value = 'dashboard';
-                    await fetchDados(1);
-                }
-            } catch (e) {
-                erroSenha.value = e.message || 'Erro ao alterar palavra-passe.';
+            } catch (err) {
+                adicionarToast(err.message || 'Erro ao alterar palavra-passe.', 'erro');
             } finally {
                 enviandoSenha.value = false;
             }
         };
 
-        // Obter Dados com Paginação Backend
+        const abrirModalAdminReset = (membro) => {
+            membroResetSelecionado.value = { ...membro };
+            modalAdminResetAberto.value = true;
+        };
+
+        const executarAdminResetSenha = async ({ loginAlvo, novaSenha }) => {
+            enviandoAdminReset.value = true;
+            try {
+                const res = await chamarBackend('adminAlterarSenha', {
+                    p_token: tokenSessao.value,
+                    p_login_alvo: loginAlvo,
+                    p_nova_senha: novaSenha
+                });
+                adicionarToast(res.mensagem || `Senha de @${loginAlvo} redefinida com sucesso!`, 'sucesso');
+                modalAdminResetAberto.value = false;
+            } catch (err) {
+                adicionarToast(err.message || 'Erro ao redefinir senha.', 'erro');
+            } finally {
+                enviandoAdminReset.value = false;
+            }
+        };
+
         const fetchDados = async (pagina = 1) => {
-            if (!usuarioAutenticado.value || !tokenSessao.value || primeiroAcessoObrigatorio.value) return;
+            if (!usuarioAutenticado.value || !tokenSessao.value) return;
             carregandoDados.value = true;
             try {
-                const data = await chamarBackend({ 
-                    acao: 'obterDados', 
-                    token: tokenSessao.value,
-                    pagina: pagina,
-                    limite: 100,
-                    filtroMembro: filtroMembroHistorico.value
+                const data = await chamarBackend('obterDados', {
+                    p_token: tokenSessao.value,
+                    p_pagina: pagina,
+                    p_limite: 100,
+                    p_filtro_membro: filtroMembroHist.value
                 });
-                
+
                 membros.value = data.membros || [];
                 registros.value = data.registros || [];
-                if (data.projetos && data.projetos.length > 0) projetos.value = data.projetos;
-                if (data.categorias && data.categorias.length > 0) categorias.value = data.categorias;
-                
-                if (data.paginacao) {
-                    paginacaoHistorico.value = data.paginacao;
-                }
-
-                if (abaAtual.value === 'graficos') nextTick(() => renderizarGraficos());
-                if (abaAtual.value === 'relatorios') nextTick(() => renderizarGraficosRelatorio());
+                todosRegistros.value = data.todosRegistros || data.registros || [];
+                projetos.value = data.projetos || [];
+                categorias.value = data.categorias || [];
+                acumuladoMembros.value = data.acumuladoMembros || [];
+                totalHorasGeral.value = data.totalHorasGeral || '0.0';
+                paginacao.value = data.paginacao || { paginaAtual: 1, limite: 100, totalRegistros: 0, totalPaginas: 1, temProximaPagina: false, temPaginaAnterior: false, de: 0, ate: 0 };
             } catch (e) {
-                mostrarToast('erro', 'Erro ao obter dados: ' + e.message);
+                console.error("Erro ao obter dados do Supabase:", e);
+                adicionarToast(e.message || "Erro ao atualizar dados.", "erro");
             } finally {
                 carregandoDados.value = false;
             }
         };
 
-        const mudarPaginaHistorico = (novaPagina) => {
-            fetchDados(novaPagina);
-        };
-
-        const mudarFiltroMembroHistorico = (novoMembro) => {
-            filtroMembroHistorico.value = novoMembro;
+        const mudarFiltroMembroHist = (novoMembro) => {
+            filtroMembroHist.value = novoMembro;
             fetchDados(1);
         };
 
-        const totalHorasGeral = computed(() => {
-            return registros.value.reduce((acc, curr) => acc + (parseFloat(curr.Horas_Gastas) || 0), 0).toFixed(1);
-        });
+        const irParaPagina = (pag) => {
+            fetchDados(pag);
+        };
 
-        const totalLancamentos = computed(() => paginacaoHistorico.value.totalRegistros || registros.value.length);
+        // Cálculos e Agregações
+        
+        const totalLancamentos = computed(() => paginacao.value.totalRegistros || registros.value.length);
 
-        const acumuladoMembros = computed(() => {
-            return membros.value.map(m => {
-                const regsMembro = registros.value.filter(r => (r.Nome_Membro === m.nome || r.Login_Membro === m.login));
-                const totalHoras = regsMembro.reduce((acc, curr) => acc + (parseFloat(curr.Horas_Gastas) || 0), 0).toFixed(1);
-                return { nome: m.nome, login: m.login, cargo: m.cargo, totalHoras, totalAtividades: regsMembro.length };
-            }).sort((a,b) => parseFloat(b.totalHoras) - parseFloat(a.totalHoras));
-        });
-
+        
         const mudarAba = (idAba) => {
             if (primeiroAcessoObrigatorio.value) {
-                mostrarToast('aviso', 'Defina uma nova palavra-passe para aceder ao sistema.');
+                adicionarToast('Por favor, defina sua nova senha antes de continuar.', 'aviso');
                 return;
             }
             abaAtual.value = idAba;
             menuMobileAberto.value = false;
-            if (idAba === 'graficos') nextTick(() => renderizarGraficos());
-            if (idAba === 'relatorios') nextTick(() => renderizarGraficosRelatorio());
         };
 
-        const formatarDataSheet = (dataStr) => {
-            if (!dataStr) return '';
-            const str = String(dataStr).trim();
-            if (str.includes('T')) {
-                const [ano, mes, dia] = str.split('T')[0].split('-');
-                return `${dia}/${mes}/${ano}`;
+        // Formulário de Lançamento de Horas
+        const form = ref({
+            data: new Date().toISOString().split('T')[0],
+            inicio: '',
+            termino: '',
+            projeto: 'Atividade',
+            categoria: 'Ensino',
+            descricao: ''
+        });
+
+        const duracaoCalculadaHoras = computed(() => {
+            if (!form.value.inicio || !form.value.termino) return 0;
+            const [h1, m1] = form.value.inicio.split(':').map(Number);
+            const [h2, m2] = form.value.termino.split(':').map(Number);
+            const minutos = Math.max(0, (h2 * 60 + m2) - (h1 * 60 + m1));
+            return parseFloat((minutos / 60).toFixed(1));
+        });
+
+        const salvarRegistro = async (extra = {}) => {
+            if (duracaoCalculadaHoras.value <= 0) {
+                adicionarToast("Horário inválido. Verifique o início e o término.", "aviso");
+                return;
             }
-            if (str.includes('-') && str.split('-')[0].length === 4) {
-                const [ano, mes, dia] = str.split('-');
-                return `${dia}/${mes}/${ano}`;
+            enviandoRegistro.value = true;
+            const dataFormatadaStr = form.value.data.split('-').reverse().join('/');
+
+            try {
+                await chamarBackend('inserir', {
+                    p_token: tokenSessao.value,
+                    p_login_alvo: extra.loginAlvo || null,
+                    p_data: dataFormatadaStr,
+                    p_projeto: form.value.projeto,
+                    p_categoria: form.value.categoria,
+                    p_horas: duracaoCalculadaHoras.value,
+                    p_descricao: form.value.descricao + ` (${form.value.inicio} - ${form.value.termino})`
+                });
+
+                adicionarToast("Atividade registrada com sucesso!", "sucesso");
+                form.value.descricao = '';
+                mudarAba('historico');
+                fetchDados(1);
+            } catch (err) {
+                adicionarToast("Erro ao gravar: " + err.message, "erro");
+            } finally {
+                enviandoRegistro.value = false;
             }
-            return str;
         };
 
-        const parseDateToTime = (dStr) => {
-            if(!dStr) return 0;
-            let iso = String(dStr).trim();
-            if(iso.includes('/')) {
-                const parts = iso.split('/');
-                iso = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        const salvarRegistroLote = async (payload) => {
+            enviandoRegistro.value = true;
+            const dataFormatadaStr = payload.data.split('-').reverse().join('/');
+
+            try {
+                const res = await chamarBackend('inserirLote', {
+                    p_token: tokenSessao.value,
+                    p_logins_membros: payload.loginsMembros,
+                    p_data: dataFormatadaStr,
+                    p_projeto: payload.projeto,
+                    p_categoria: payload.categoria,
+                    p_horas: payload.horas,
+                    p_descricao: payload.descricao + ` (${payload.inicio} - ${payload.termino})`
+                });
+
+                adicionarToast(res.mensagem || `Lançamento em lote criado com sucesso para ${payload.loginsMembros.length} membros!`, "sucesso");
+                mudarAba('historico');
+                fetchDados(1);
+            } catch (err) {
+                adicionarToast("Erro ao gravar lote: " + err.message, "erro");
+            } finally {
+                enviandoRegistro.value = false;
             }
-            if(iso.includes('T')) iso = iso.split('T')[0];
-            return new Date(iso + 'T00:00:00').getTime();
         };
 
-        const abrirEdicaoRegistro = (reg) => {
+        // Cronômetro
+        const timerAtivo = ref(false);
+        const segundosCount = ref(0);
+        let intervalCronometro;
+        const cronometroDisplay = computed(() => {
+            const h = Math.floor(segundosCount.value / 3600).toString().padStart(2, '0');
+            const m = Math.floor((segundosCount.value % 3600) / 60).toString().padStart(2, '0');
+            const s = (segundosCount.value % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        });
+
+        const iniciarCronometro = () => {
+            form.value.inicio = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+            timerAtivo.value = true;
+            intervalCronometro = setInterval(() => segundosCount.value++, 1000);
+            adicionarToast("Cronómetro iniciado.", "info");
+        };
+
+        const pararCronometro = () => {
+            timerAtivo.value = false;
+            clearInterval(intervalCronometro);
+            form.value.termino = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+            segundosCount.value = 0;
+            adicionarToast("Tempo capturado no formulário.", "sucesso");
+        };
+
+        // Modal de Edição Individual
+        const modalEdicaoAberto = ref(false);
+        const registroParaEdicao = ref({});
+        const enviandoEdicao = ref(false);
+
+        const abrirModalEdicao = (reg) => {
             registroParaEdicao.value = { ...reg };
             modalEdicaoAberto.value = true;
         };
 
-        const salvarEdicaoRegistro = async (dadosAtualizados) => {
+        const salvarEdicaoRegistro = async (payload) => {
             enviandoEdicao.value = true;
             try {
-                await chamarBackend({
-                    acao: 'editarRegistro',
-                    token: tokenSessao.value,
-                    ...dadosAtualizados
+                await chamarBackend('editarRegistro', {
+                    p_token: tokenSessao.value,
+                    p_id_registro: payload.idRegistro,
+                    p_data: payload.data,
+                    p_projeto: payload.projeto,
+                    p_categoria: payload.categoria,
+                    p_horas: payload.horas,
+                    p_descricao: payload.descricao
                 });
+                adicionarToast("Lançamento atualizado com sucesso!", "sucesso");
                 modalEdicaoAberto.value = false;
-                await fetchDados(paginacaoHistorico.value.paginaAtual);
-                mostrarToast('sucesso', 'Lançamento atualizado com sucesso!');
-            } catch (e) {
-                mostrarToast('erro', 'Erro ao editar lançamento: ' + e.message);
+                fetchDados(paginacao.value.paginaAtual);
+            } catch (err) {
+                adicionarToast("Erro ao editar: " + err.message, "erro");
             } finally {
                 enviandoEdicao.value = false;
             }
         };
 
-        const solicitarExclusaoRegistro = (reg) => {
+        const excluirRegistroConfirmado = (idRegistro) => {
             abrirConfirmacao({
-                titulo: 'Excluir Lançamento de Horas',
-                mensagem: `Deseja realmente eliminar permanentemente o lançamento de ${reg.Horas_Gastas}h em "${reg.Projeto || 'Atividade'}" (${reg.Nome_Membro})?`,
-                tipo: 'destrutivo',
-                textoConfirmar: 'Sim, Excluir',
-                aoConfirmar: async () => {
-                    await chamarBackend({
-                        acao: 'excluirRegistro',
-                        token: tokenSessao.value,
-                        idRegistro: reg.ID
+                titulo: "Excluir Lançamento",
+                mensagem: `Tem certeza que deseja excluir permanentemente o lançamento ID ${idRegistro}?`,
+                textoBotao: "Excluir Registro",
+                perigoso: true,
+                onConfirm: async () => {
+                    await chamarBackend('excluirRegistro', {
+                        p_token: tokenSessao.value,
+                        p_id_registro: idRegistro
                     });
-                    await fetchDados(paginacaoHistorico.value.paginaAtual);
-                    mostrarToast('sucesso', 'Lançamento removido com sucesso!');
+                    adicionarToast("Lançamento excluído com sucesso!", "sucesso");
+                    fetchDados(paginacao.value.paginaAtual);
                 }
             });
         };
 
-        const adicionarProjeto = async (nomeProjeto) => {
-            carregandoProjetosCategorias.value = true;
+        // Edição e Exclusão em Lote
+        const modalEdicaoLoteAberto = ref(false);
+        const idsParaEdicaoLote = ref([]);
+        const enviandoEdicaoLote = ref(false);
+
+        const abrirModalEdicaoLote = (ids) => {
+            idsParaEdicaoLote.value = ids;
+            modalEdicaoLoteAberto.value = true;
+        };
+
+        const salvarEdicaoLote = async (payload) => {
+            enviandoEdicaoLote.value = true;
             try {
-                await chamarBackend({ acao: 'adicionarProjeto', token: tokenSessao.value, nome: nomeProjeto });
-                await fetchDados(1);
-                mostrarToast('sucesso', `Projeto "${nomeProjeto}" adicionado com sucesso!`);
-            } catch (e) {
-                mostrarToast('erro', "Erro ao adicionar projeto: " + e.message);
+                const res = await chamarBackend('editarRegistrosLote', {
+                    p_token: tokenSessao.value,
+                    p_ids_registros: payload.idsRegistros,
+                    p_data: payload.data,
+                    p_projeto: payload.projeto,
+                    p_categoria: payload.categoria,
+                    p_horas: payload.horas,
+                    p_descricao: payload.descricao
+                });
+                adicionarToast(res.mensagem || `Lançamentos atualizados em lote!`, "sucesso");
+                modalEdicaoLoteAberto.value = false;
+                fetchDados(paginacao.value.paginaAtual);
+            } catch (err) {
+                adicionarToast("Erro ao editar em lote: " + err.message, "erro");
             } finally {
-                carregandoProjetosCategorias.value = false;
+                enviandoEdicaoLote.value = false;
             }
         };
 
-        const excluirProjeto = (nomeProjeto) => {
+        const excluirLoteConfirmado = (ids) => {
             abrirConfirmacao({
-                titulo: 'Remover Projeto',
-                mensagem: `Tem a certeza que deseja remover o projeto "${nomeProjeto}"?`,
-                tipo: 'destrutivo',
-                textoConfirmar: 'Remover',
-                aoConfirmar: async () => {
-                    await chamarBackend({ acao: 'excluirProjeto', token: tokenSessao.value, nome: nomeProjeto });
-                    await fetchDados(1);
-                    mostrarToast('sucesso', `Projeto "${nomeProjeto}" removido.`);
+                titulo: "Excluir Lançamentos em Lote",
+                mensagem: `Tem certeza que deseja excluir permanentemente os ${ids.length} lançamentos selecionados?`,
+                textoBotao: "Excluir Lote Selecionado",
+                perigoso: true,
+                onConfirm: async () => {
+                    const res = await chamarBackend('excluirRegistrosLote', {
+                        p_token: tokenSessao.value,
+                        p_ids_registros: ids
+                    });
+                    adicionarToast(res.mensagem || `${ids.length} lançamentos excluídos com sucesso!`, "sucesso");
+                    fetchDados(paginacao.value.paginaAtual);
                 }
             });
         };
 
-        const adicionarCategoria = async (nomeCategoria) => {
-            carregandoProjetosCategorias.value = true;
+        // Gestão de Projetos e Categorias
+        const carregandoItemLista = ref(false);
+
+        const adicionarProjeto = async (nome) => {
+            carregandoItemLista.value = true;
             try {
-                await chamarBackend({ acao: 'adicionarCategoria', token: tokenSessao.value, nome: nomeCategoria });
-                await fetchDados(1);
-                mostrarToast('sucesso', `Categoria "${nomeCategoria}" adicionada com sucesso!`);
-            } catch (e) {
-                mostrarToast('erro', "Erro ao adicionar categoria: " + e.message);
+                await chamarBackend('adicionarProjeto', { p_token: tokenSessao.value, p_nome: nome });
+                adicionarToast(`Projeto '${nome}' criado com sucesso!`, 'sucesso');
+                fetchDados(paginacao.value.paginaAtual);
+            } catch (err) {
+                adicionarToast(err.message || "Erro ao adicionar projeto.", "erro");
             } finally {
-                carregandoProjetosCategorias.value = false;
+                carregandoItemLista.value = false;
             }
         };
 
-        const excluirCategoria = (nomeCategoria) => {
+        const excluirProjeto = (nome) => {
             abrirConfirmacao({
-                titulo: 'Remover Categoria',
-                mensagem: `Tem a certeza que deseja remover a categoria "${nomeCategoria}"?`,
-                tipo: 'destrutivo',
-                textoConfirmar: 'Remover',
-                aoConfirmar: async () => {
-                    await chamarBackend({ acao: 'excluirCategoria', token: tokenSessao.value, nome: nomeCategoria });
-                    await fetchDados(1);
-                    mostrarToast('sucesso', `Categoria "${nomeCategoria}" removida.`);
+                titulo: "Excluir Projeto",
+                mensagem: `Deseja remover o projeto '${nome}' do catálogo?`,
+                textoBotao: "Excluir Projeto",
+                perigoso: true,
+                onConfirm: async () => {
+                    await chamarBackend('excluirProjeto', { p_token: tokenSessao.value, p_nome: nome });
+                    adicionarToast(`Projeto '${nome}' removido.`, "sucesso");
+                    fetchDados(paginacao.value.paginaAtual);
+                }
+            });
+        };
+
+        const adicionarCategoria = async (nome) => {
+            carregandoItemLista.value = true;
+            try {
+                await chamarBackend('adicionarCategoria', { p_token: tokenSessao.value, p_nome: nome });
+                adicionarToast(`Categoria '${nome}' criada com sucesso!`, 'sucesso');
+                fetchDados(paginacao.value.paginaAtual);
+            } catch (err) {
+                adicionarToast(err.message || "Erro ao adicionar categoria.", "erro");
+            } finally {
+                carregandoItemLista.value = false;
+            }
+        };
+
+        const excluirCategoria = (nome) => {
+            abrirConfirmacao({
+                titulo: "Excluir Categoria",
+                mensagem: `Deseja remover a categoria '${nome}' do catálogo?`,
+                textoBotao: "Excluir Categoria",
+                perigoso: true,
+                onConfirm: async () => {
+                    await chamarBackend('excluirCategoria', { p_token: tokenSessao.value, p_nome: nome });
+                    adicionarToast(`Categoria '${nome}' removida.`, "sucesso");
+                    fetchDados(paginacao.value.paginaAtual);
+                }
+            });
+        };
+
+        // Gestão de Membros
+        const modalMembroAberto = ref(false);
+
+        const salvarMembro = async (payload) => {
+            enviandoMembro.value = true;
+            try {
+                const res = await chamarBackend('adicionarUsuario', {
+                    p_token: tokenSessao.value,
+                    p_nome: payload.nome,
+                    p_login: payload.login,
+                    p_senha: payload.senha,
+                    p_cargo: payload.cargo,
+                    p_ativo: payload.ativo
+                });
+                adicionarToast(res.mensagem || `Membro @${payload.login} cadastrado com sucesso!`, "sucesso");
+                modalMembroAberto.value = false;
+                fetchDados(paginacao.value.paginaAtual);
+            } catch (err) {
+                adicionarToast("Erro ao adicionar membro: " + err.message, "erro");
+            } finally {
+                enviandoMembro.value = false;
+            }
+        };
+
+        const alternarStatusMembro = async (login, novoStatus) => {
+            try {
+                await chamarBackend('alternarStatusUsuario', {
+                    p_token: tokenSessao.value,
+                    p_login: login,
+                    p_ativo: novoStatus
+                });
+                adicionarToast(`Status de @${login} alterado para ${novoStatus === 'SIM' ? 'Ativo' : 'Inativo'}.`, "sucesso");
+                fetchDados(paginacao.value.paginaAtual);
+            } catch (err) {
+                adicionarToast("Erro ao alterar status: " + err.message, "erro");
+            }
+        };
+
+        const removerMembro = (login) => {
+            abrirConfirmacao({
+                titulo: "Excluir Membro",
+                mensagem: `Tem certeza que deseja excluir permanentemente o membro @${login}?`,
+                textoBotao: "Excluir Membro",
+                perigoso: true,
+                onConfirm: async () => {
+                    await chamarBackend('excluirUsuario', {
+                        p_token: tokenSessao.value,
+                        p_login: login
+                    });
+                    adicionarToast(`Membro @${login} excluído.`, "sucesso");
+                    fetchDados(paginacao.value.paginaAtual);
                 }
             });
         };
 
         // Relatórios
         const filtroRelatorio = ref({ inicio: '', fim: '', membro: '' });
-        let chartRelRankingInstance = null;
-        let chartRelCategoriaInstance = null;
 
         const aplicarFiltroRapido = (tipo) => {
             const hoje = new Date();
@@ -469,11 +645,22 @@ const app = createApp({
             }
         };
 
+        const parseDateToTime = (dStr) => {
+            if (!dStr) return 0;
+            let iso = dStr;
+            if (iso.includes('/')) {
+                const parts = iso.split('/');
+                iso = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+            if (iso.includes('T')) iso = iso.split('T')[0];
+            return new Date(iso + 'T00:00:00').getTime();
+        };
+
         const registrosRelatorio = computed(() => {
             const inicioTime = filtroRelatorio.value.inicio ? parseDateToTime(filtroRelatorio.value.inicio) : 0;
             const fimTime = filtroRelatorio.value.fim ? parseDateToTime(filtroRelatorio.value.fim) : Infinity;
             
-            return registros.value.filter(r => {
+            return (todosRegistros.value.length > 0 ? todosRegistros.value : registros.value).filter(r => {
                 const rTime = parseDateToTime(r.Data);
                 const noPeriodo = (!inicioTime || rTime >= inicioTime) && (!fimTime || rTime <= fimTime);
                 const matchMembro = filtroRelatorio.value.membro ? r.Nome_Membro === filtroRelatorio.value.membro : true;
@@ -482,11 +669,11 @@ const app = createApp({
         });
 
         const registrosRelatorioOrdenados = computed(() => {
-            return [...registrosRelatorio.value].sort((a,b) => parseDateToTime(b.Data) - parseDateToTime(a.Data));
+            return [...registrosRelatorio.value].sort((a, b) => parseDateToTime(b.Data) - parseDateToTime(a.Data));
         });
 
         const periodoRelatorioTexto = computed(() => {
-            if(!filtroRelatorio.value.inicio && !filtroRelatorio.value.fim) return "Todo o Histórico";
+            if (!filtroRelatorio.value.inicio && !filtroRelatorio.value.fim) return "Todo o Histórico";
             const i = filtroRelatorio.value.inicio ? formatarDataSheet(filtroRelatorio.value.inicio) : 'Início';
             const f = filtroRelatorio.value.fim ? formatarDataSheet(filtroRelatorio.value.fim) : 'Hoje';
             return `${i} a ${f}`;
@@ -522,7 +709,7 @@ const app = createApp({
         const rankingRelatorio = computed(() => {
             const mapa = {};
             registrosRelatorio.value.forEach(r => {
-                if(!mapa[r.Nome_Membro]) mapa[r.Nome_Membro] = { nome: r.Nome_Membro, horas: 0, atividades: 0 };
+                if (!mapa[r.Nome_Membro]) mapa[r.Nome_Membro] = { nome: r.Nome_Membro, horas: 0, atividades: 0 };
                 mapa[r.Nome_Membro].horas += (parseFloat(r.Horas_Gastas) || 0);
                 mapa[r.Nome_Membro].atividades += 1;
             });
@@ -531,81 +718,11 @@ const app = createApp({
                 .sort((a, b) => b.horas - a.horas);
         });
 
-        const renderizarGraficosRelatorio = () => {
-            const ctxRank = document.getElementById('chartRelRanking');
-            const ctxCat = document.getElementById('chartRelCategoria');
-            if (!ctxRank || !ctxCat) return;
-
-            Chart.defaults.font.family = "'Inter', sans-serif";
-
-            const rankData = rankingRelatorio.value.slice(0, 10); 
-            if (chartRelRankingInstance) chartRelRankingInstance.destroy();
-            chartRelRankingInstance = new Chart(ctxRank, {
-                type: 'bar',
-                data: {
-                    labels: rankData.map(d => (d.nome || '').split(' ')[0]),
-                    datasets: [{
-                        label: 'Horas Registadas',
-                        data: rankData.map(d => d.horas),
-                        backgroundColor: '#10b981',
-                        borderRadius: 6,
-                        barPercentage: 0.6
-                    }]
-                },
-                options: { 
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { borderDash: [4, 4] } }, x: { grid: { display: false } } }
-                }
-            });
-
-            const catMap = {};
-            registrosRelatorio.value.forEach(r => {
-                const c = r.Categoria || 'Outros';
-                catMap[c] = (catMap[c] || 0) + (parseFloat(r.Horas_Gastas) || 0);
-            });
-            
-            if (chartRelCategoriaInstance) chartRelCategoriaInstance.destroy();
-            chartRelCategoriaInstance = new Chart(ctxCat, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(catMap),
-                    datasets: [{
-                        data: Object.values(catMap),
-                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b', '#14b8a6', '#f43f5e', '#0ea5e9'],
-                        borderWidth: 2,
-                        borderColor: '#ffffff'
-                    }]
-                },
-                options: { 
-                    responsive: true, maintainAspectRatio: false, 
-                    plugins: { 
-                        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } 
-                    },
-                    cutout: '65%'
-                }
-            });
-        };
-
-        watch(registrosRelatorio, () => {
-            if(abaAtual.value === 'relatorios') {
-                nextTick(() => renderizarGraficosRelatorio());
-            }
-        }, { deep: true });
-
         const exportarCSV = () => {
-            const sanitizar = (txt) => {
-                if (!txt) return '';
-                let s = String(txt).replace(/"/g, '""');
-                if (s.length > 0 && ['=', '+', '-', '@', '\t', '\r'].includes(s.charAt(0))) {
-                    s = "'" + s;
-                }
-                return s;
-            };
-
             let csv = "Data,Membro,Projeto,Categoria,Horas,Descricao\n";
             registrosRelatorioOrdenados.value.forEach(r => {
-                csv += `"${sanitizar(formatarDataSheet(r.Data))}","${sanitizar(r.Nome_Membro)}","${sanitizar(r.Projeto || 'Atividade')}","${sanitizar(r.Categoria)}",${parseFloat(r.Horas_Gastas || 0).toFixed(1)},"${sanitizar(r.Descricao)}"\n`;
+                let desc = (r.Descricao || '').replace(/"/g, '""');
+                csv += `${formatarDataSheet(r.Data)},"${r.Nome_Membro}","${r.Projeto || 'Atividade'}","${r.Categoria}",${r.Horas_Gastas},"${desc}"\n`;
             });
             const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: "text/csv;charset=utf-8" });
             const url = URL.createObjectURL(blob);
@@ -616,226 +733,17 @@ const app = createApp({
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            mostrarToast('sucesso', 'Ficheiro CSV descarregado com sucesso!');
+            adicionarToast("Relatório CSV descarregado.", "sucesso");
         };
 
         const imprimirRelatorio = () => {
             window.print();
         };
 
-        let chartTemporalInstance = null;
-        let chartCategoriaInstance = null;
-        const periodoGrafico = ref('mes');
-
-        const mudarPeriodoGrafico = (periodo) => {
-            periodoGrafico.value = periodo;
-            renderizarGraficos();
-        };
-
-        const renderizarGraficos = () => {
-            const ctxTemp = document.getElementById('graficoTemporal');
-            const ctxCat = document.getElementById('graficoCategoria');
-            if (!ctxTemp || !ctxCat) return;
-
-            Chart.defaults.font.family = "'Inter', sans-serif";
-            const dadosTemporais = {};
-            registros.value.forEach(r => {
-                let d = new Date(r.Data);
-                if (isNaN(d.getTime()) && r.Data && String(r.Data).includes('/')) {
-                    const parts = String(r.Data).split('/');
-                    d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-                }
-                if (isNaN(d.getTime())) return;
-
-                let chave = "";
-                if (periodoGrafico.value === 'mes') {
-                    chave = d.toLocaleDateString('pt-PT', { month: 'short', year: '2-digit' });
-                } else if (periodoGrafico.value === 'semestre') {
-                    const sem = d.getMonth() < 6 ? '1º Sem' : '2º Sem';
-                    chave = `${sem}/${d.getFullYear()}`;
-                } else if (periodoGrafico.value === 'semana') {
-                    const inicioSemana = new Date(d);
-                    inicioSemana.setDate(d.getDate() - d.getDay());
-                    chave = `Sem ${inicioSemana.getDate()}/${inicioSemana.getMonth()+1}`;
-                }
-
-                dadosTemporais[chave] = (dadosTemporais[chave] || 0) + (parseFloat(r.Horas_Gastas) || 0);
-            });
-
-            if (chartTemporalInstance) chartTemporalInstance.destroy();
-            chartTemporalInstance = new Chart(ctxTemp, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(dadosTemporais),
-                    datasets: [{
-                        label: 'Horas Registadas',
-                        data: Object.values(dadosTemporais),
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
-            });
-
-            const dadosCategorias = {};
-            registros.value.forEach(r => {
-                const cat = r.Categoria || 'Outros';
-                dadosCategorias[cat] = (dadosCategorias[cat] || 0) + (parseFloat(r.Horas_Gastas) || 0);
-            });
-
-            if (chartCategoriaInstance) chartCategoriaInstance.destroy();
-            chartCategoriaInstance = new Chart(ctxCat, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(dadosCategorias),
-                    datasets: [{
-                        data: Object.values(dadosCategorias),
-                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b']
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
-            });
-        };
-
-        const salvarMembro = async (formData) => {
-            enviandoMembro.value = true;
-            try {
-                await chamarBackend({
-                    acao: "adicionarUsuario",
-                    token: tokenSessao.value,
-                    nome: formData.nome,
-                    login: formData.login,
-                    senha: formData.senha,
-                    cargo: formData.cargo,
-                    ativo: formData.ativo
-                });
-                modalMembroAberto.value = false;
-                await fetchDados(1);
-                mostrarToast('sucesso', `Membro @${formData.login} cadastrado com sucesso!`);
-            } catch (err) {
-                mostrarToast('erro', "Erro ao cadastrar membro: " + err.message);
-            } finally {
-                enviandoMembro.value = false;
-            }
-        };
-
-        const alternarStatusMembro = async (loginMembro, novoStatusAtivo) => {
-            carregandoDados.value = true;
-            try {
-                await chamarBackend({
-                    acao: "alternarStatusUsuario",
-                    token: tokenSessao.value,
-                    loginUsuario: loginMembro,
-                    ativo: novoStatusAtivo ? 'SIM' : 'NAO'
-                });
-                await fetchDados(1);
-                mostrarToast('sucesso', `Status do utilizador @${loginMembro} atualizado.`);
-            } catch (err) {
-                mostrarToast('erro', "Erro ao alterar status: " + err.message);
-                carregandoDados.value = false;
-            }
-        };
-
-        const removerMembro = (loginMembro) => {
-            abrirConfirmacao({
-                titulo: 'Eliminar Membro',
-                mensagem: `Tem a certeza que deseja eliminar permanentemente o utilizador @${loginMembro} da liga?`,
-                tipo: 'destrutivo',
-                textoConfirmar: 'Sim, Eliminar',
-                aoConfirmar: async () => {
-                    await chamarBackend({
-                        acao: "excluirUsuario",
-                        token: tokenSessao.value,
-                        loginUsuario: loginMembro
-                    });
-                    await fetchDados(1);
-                    mostrarToast('sucesso', `Utilizador @${loginMembro} excluído.`);
-                }
-            });
-        };
-
-        const modoRegistro = ref('manual');
-        const form = ref({
-            data: new Date().toISOString().split('T')[0],
-            projeto: 'Atividade',
-            categoria: '',
-            inicio: '',
-            termino: '',
-            descricao: ''
-        });
-
-        const duracaoCalculadaHoras = computed(() => {
-            if (!form.value.inicio || !form.value.termino) return 0;
-            const [h1, m1] = form.value.inicio.split(':').map(Number);
-            const [h2, m2] = form.value.termino.split(':').map(Number);
-            const minutos = Math.max(0, (h2 * 60 + m2) - (h1 * 60 + m1));
-            return parseFloat((minutos / 60).toFixed(1));
-        });
-
-        const salvarRegistro = async () => {
-            if (duracaoCalculadaHoras.value <= 0) { 
-                mostrarToast('aviso', "Horário inválido. Verifique o início e fim da atividade."); 
-                return; 
-            }
-            if (!form.value.categoria) { 
-                mostrarToast('aviso', "Selecione uma categoria de atividade."); 
-                return; 
-            }
-            enviandoRegistro.value = true;
-            const dataFormatadaStr = form.value.data.split('-').reverse().join('/');
-
-            try {
-                await chamarBackend({
-                    acao: "inserir",
-                    token: tokenSessao.value,
-                    data: dataFormatadaStr,
-                    projeto: form.value.projeto || 'Atividade',
-                    categoria: form.value.categoria,
-                    horas: duracaoCalculadaHoras.value,
-                    descricao: form.value.descricao + ` (${form.value.inicio} - ${form.value.termino})`
-                });
-                form.value = { 
-                    data: new Date().toISOString().split('T')[0], 
-                    projeto: projetos.value[0] || 'Atividade',
-                    categoria: '', 
-                    inicio: '', 
-                    termino: '', 
-                    descricao: '' 
-                };
-                mostrarToast('sucesso', 'Atividade registada com sucesso!');
-                mudarAba('historico');
-                await fetchDados(1);
-            } catch (err) {
-                mostrarToast('erro', "Erro ao registar: " + err.message);
-            } finally {
-                enviandoRegistro.value = false;
-            }
-        };
-
-        const timerAtivo = ref(false);
-        const segundosCount = ref(0);
-        let intervalCronometro;
-        const cronometroDisplay = computed(() => {
-            const h = Math.floor(segundosCount.value / 3600).toString().padStart(2, '0');
-            const m = Math.floor((segundosCount.value % 3600) / 60).toString().padStart(2, '0');
-            const s = (segundosCount.value % 60).toString().padStart(2, '0');
-            return `${h}:${m}:${s}`;
-        });
-
-        const iniciarCronometro = () => {
-            form.value.inicio = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute:'2-digit' });
-            timerAtivo.value = true;
-            intervalCronometro = setInterval(() => segundosCount.value++, 1000);
-            mostrarToast('info', 'Cronómetro iniciado.');
-        };
-
-        const pararCronometro = () => {
-            timerAtivo.value = false;
-            clearInterval(intervalCronometro);
-            form.value.termino = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute:'2-digit' });
-            modoRegistro.value = 'manual';
-            segundosCount.value = 0;
-            mostrarToast('sucesso', 'Tempo preenchido no formulário!');
+        const formatarDataSheet = (dataStr) => {
+            if (!dataStr) return '';
+            if (dataStr.includes('T')) return dataStr.split('T')[0].split('-').reverse().join('/');
+            return dataStr;
         };
 
         onMounted(() => {
@@ -850,22 +758,24 @@ const app = createApp({
         });
 
         return {
-            usuarioAutenticado, usuarioAtual, carregandoLogin, mensagemErroLogin, mensagemSucessoLogin,
+            usuarioAutenticado, usuarioAtual, carregandoLogin, mensagemErroLogin,
             fazerLogin, fazerLogout,
-            toasts, mostrarToast, fecharToast,
-            modalConfirmacao, abrirConfirmacao, executarConfirmacao,
-            modalSenhaAberto, primeiroAcessoObrigatorio, enviandoSenha, erroSenha, salvarNovaSenha,
+            toasts, removerToast,
+            modalConfirmacao, fecharConfirmacao, executarConfirmacao,
+            modalSenhaAberto, primeiroAcessoObrigatorio, enviandoSenha, salvarAlteracaoSenha,
+            modalAdminResetAberto, membroResetSelecionado, enviandoAdminReset, abrirModalAdminReset, executarAdminResetSenha,
             abas, abaAtual, tituloAbaAtual: computed(() => abas.value.find(a => a.id === abaAtual.value)?.label),
             horaFormatada, dataFormatada, menuMobileAberto, mudarAba,
-            membros, registros, projetos, categorias, carregandoDados, enviandoRegistro, enviandoMembro, carregandoProjetosCategorias,
-            totalHorasGeral, totalLancamentos, acumuladoMembros, fetchDados,
-            paginacaoHistorico, filtroMembroHistorico, mudarPaginaHistorico, mudarFiltroMembroHistorico,
-            adicionarProjeto, excluirProjeto, adicionarCategoria, excluirCategoria,
-            modalMembroAberto, salvarMembro, alternarStatusMembro, removerMembro,
-            modalEdicaoAberto, registroParaEdicao, enviandoEdicao, abrirEdicaoRegistro, salvarEdicaoRegistro, solicitarExclusaoRegistro, podeEditarExcluir,
-            periodoGrafico, mudarPeriodoGrafico,
-            modoRegistro, form, duracaoCalculadaHoras, salvarRegistro,
+            membros, registros, todosRegistros, projetos, categorias, carregandoDados, enviandoRegistro, enviandoMembro,
+            filtroMembroHist, mudarFiltroMembroHist, paginacao, irParaPagina,
+            totalHorasGeral, totalLancamentos, acumuladoMembros,
+            periodoGrafico: ref('mes'),
+            carregandoItemLista, adicionarProjeto, excluirProjeto, adicionarCategoria, excluirCategoria,
+            form, duracaoCalculadaHoras, salvarRegistro, salvarRegistroLote,
             timerAtivo, cronometroDisplay, iniciarCronometro, pararCronometro,
+            modalEdicaoAberto, registroParaEdicao, enviandoEdicao, abrirModalEdicao, salvarEdicaoRegistro, excluirRegistroConfirmado,
+            modalEdicaoLoteAberto, idsParaEdicaoLote, enviandoEdicaoLote, abrirModalEdicaoLote, salvarEdicaoLote, excluirLoteConfirmado,
+            modalMembroAberto, salvarMembro, alternarStatusMembro, removerMembro,
             formatarDataSheet,
             filtroRelatorio, periodoRelatorioTexto, registrosRelatorio, registrosRelatorioOrdenados,
             kpisRelatorio, rankingRelatorio, aplicarFiltroRapido, exportarCSV, imprimirRelatorio

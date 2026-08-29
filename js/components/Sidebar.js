@@ -8,7 +8,19 @@ window.SidebarComponent = {
     emits: ['mudar-aba', 'fechar-menu', 'fazer-logout'],
     computed: {
         abasPermitidas() {
-            return this.abas.filter(aba => !aba.cargos || aba.cargos.includes(this.cargoUsuario));
+            const cargo = (this.cargoUsuario || '').toUpperCase();
+            // Proprietário e Administrador Master têm acesso a TODAS as abas
+            if (cargo === 'PROPRIETARIO' || cargo === 'ADMINISTRADOR_MASTER') {
+                return this.abas;
+            }
+            return this.abas.filter(aba => {
+                if (!aba.cargos || aba.cargos.length === 0) return true;
+                const cargosNorm = aba.cargos.map(c => c.toUpperCase());
+                if (cargosNorm.includes(cargo)) return true;
+                if ((cargo === 'MEMBRO' || cargo === 'MEMBRO_COMUM') && (cargosNorm.includes('FUNCIONARIO') || cargosNorm.includes('MEMBRO') || cargosNorm.includes('MEMBRO_COMUM'))) return true;
+                if (cargo === 'FUNCIONARIO' && (cargosNorm.includes('MEMBRO') || cargosNorm.includes('MEMBRO_COMUM') || cargosNorm.includes('FUNCIONARIO'))) return true;
+                return false;
+            });
         }
     },
     template: `

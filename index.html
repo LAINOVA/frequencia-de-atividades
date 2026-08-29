@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LAINOVA - Gestão de Atividades</title>
+    <title>LAINOVA - Painel de Atividades</title>
     
     <!-- Bibliotecas Externas (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -18,42 +19,48 @@
 
 <div id="app" v-cloak class="w-full h-full relative">
 
-    <!-- CONTAINER GLOBAL DE TOASTS -->
-    <toast-container :toasts="toasts" @fechar-toast="fecharToast"></toast-container>
+    <!-- Container de Notificações Toast -->
+    <toast-container :toasts="toasts" @fechar="removerToast"></toast-container>
 
-    <!-- MODAL DE CONFIRMAÇÃO GLOBAL (Substitui confirm()) -->
+    <!-- Modal de Confirmação Global -->
     <modal-confirmacao 
         :aberto="modalConfirmacao.aberto"
         :titulo="modalConfirmacao.titulo"
         :mensagem="modalConfirmacao.mensagem"
-        :tipo="modalConfirmacao.tipo"
-        :texto-confirmar="modalConfirmacao.textoConfirmar"
-        :texto-cancelar="modalConfirmacao.textoCancelar"
+        :texto-botao="modalConfirmacao.textoBotao"
+        :perigoso="modalConfirmacao.perigoso"
         :carregando="modalConfirmacao.carregando"
         @confirmar="executarConfirmacao"
-        @cancelar="modalConfirmacao.aberto = false">
+        @cancelar="fecharConfirmacao">
     </modal-confirmacao>
 
-    <!-- MODAL DE ALTERAÇÃO DE SENHA / PRIMEIRO ACESSO -->
+    <!-- Modal de Alteração de Senha / Primeiro Acesso -->
     <modal-alterar-senha
-        :aberto="modalSenhaAberto"
+        :modal-aberto="modalSenhaAberto"
         :primeiro-acesso="primeiroAcessoObrigatorio"
         :enviando="enviandoSenha"
-        :erro="erroSenha"
-        @salvar-senha="salvarNovaSenha"
-        @fechar="modalSenhaAberto = false">
+        @fechar="modalSenhaAberto = false"
+        @salvar-senha="salvarAlteracaoSenha">
     </modal-alterar-senha>
 
-    <!-- TELA DE LOGIN -->
+    <!-- Modal de Redefinição de Senha de Membro (Master Admin) -->
+    <modal-admin-reset-senha
+        :modal-aberto="modalAdminResetAberto"
+        :membro="membroResetSelecionado"
+        :enviando="enviandoAdminReset"
+        @fechar="modalAdminResetAberto = false"
+        @salvar-reset="executarAdminResetSenha">
+    </modal-admin-reset-senha>
+
+    <!-- TELA DE LOGIN (Se não estiver autenticado) -->
     <login-view 
         v-if="!usuarioAutenticado" 
         :carregando-login="carregandoLogin" 
         :mensagem-erro="mensagemErroLogin"
-        :mensagem-sucesso="mensagemSucessoLogin"
         @fazer-login="fazerLogin">
     </login-view>
 
-    <!-- PAINEL PRINCIPAL (Autenticado) -->
+    <!-- PAINEL PRINCIPAL (Se estiver autenticado) -->
     <div v-else class="flex w-full h-full relative">
         
         <!-- Tela de Carregamento Global -->
@@ -62,7 +69,7 @@
             <p>A sincronizar com a base de dados...</p>
         </div>
 
-        <!-- MENU LATERAL -->
+        <!-- MENU LATERAL (Filtrado por Cargo) -->
         <app-sidebar 
             :abas="abas" 
             :aba-atual="abaAtual" 
@@ -83,8 +90,8 @@
                 :data-formatada="dataFormatada"
                 :usuario="usuarioAtual"
                 @abrir-menu="menuMobileAberto = true"
-                @fazer-logout="fazerLogout"
-                @abrir-alterar-senha="modalSenhaAberto = true">
+                @abrir-alterar-senha="modalSenhaAberto = true"
+                @fazer-logout="fazerLogout">
             </app-header>
 
             <!-- CONTAINER DE TELAS -->
@@ -100,65 +107,66 @@
                     :cargo-usuario="usuarioAtual.cargo">
                 </dashboard-view>
 
-                <!-- TELA 2: REGISTAR HORAS -->
+                <!-- TELA 2: REGISTAR HORAS (Individual ou Em Lote) -->
                 <registrar-view 
                     v-if="abaAtual === 'registrar'"
                     :projetos="projetos"
                     :categorias="categorias"
-                    :modo-registro="modoRegistro"
+                    :membros="membros"
                     :form="form"
                     :duracao-calculada-horas="duracaoCalculadaHoras"
                     :enviando-registro="enviandoRegistro"
                     :timer-ativo="timerAtivo"
                     :cronometro-display="cronometroDisplay"
                     :usuario="usuarioAtual"
-                    @mudar-modo="modoRegistro = $event"
                     @salvar-registro="salvarRegistro"
+                    @salvar-registro-lote="salvarRegistroLote"
                     @iniciar-cronometro="iniciarCronometro"
                     @parar-cronometro="pararCronometro">
                 </registrar-view>
 
-                <!-- TELA 3: HISTÓRICO (Com Paginação Real Backend) -->
+                <!-- TELA 3: HISTÓRICO (Com Edição/Exclusão Individual e em Lote) -->
                 <historico-view 
                     v-if="abaAtual === 'historico'"
-                    :registros="registros"
-                    :paginacao="paginacaoHistorico"
-                    :filtro-membro="filtroMembroHistorico"
+                    :registros-ordenados="registros"
                     :formatar-data-sheet="formatarDataSheet"
                     :cargo-usuario="usuarioAtual.cargo"
                     :membros="membros"
-                    :pode-editar-excluir="podeEditarExcluir"
-                    :carregando="carregandoDados"
-                    @abrir-edicao="abrirEdicaoRegistro"
-                    @solicitar-exclusao="solicitarExclusaoRegistro"
-                    @mudar-pagina="mudarPaginaHistorico"
-                    @mudar-filtro-membro="mudarFiltroMembroHistorico">
+                    :filtro-membro="filtroMembroHist"
+                    :paginacao="paginacao"
+                    :pode-editar-excluir="usuarioAtual.cargo === 'ADMINISTRADOR_MASTER' || usuarioAtual.cargo === 'ADMINISTRADOR' || usuarioAtual.cargo === 'GESTOR'"
+                    @mudar-filtro-membro="mudarFiltroMembroHist"
+                    @ir-pagina="irParaPagina"
+                    @abrir-edicao="abrirModalEdicao"
+                    @excluir-registro="excluirRegistroConfirmado"
+                    @abrir-edicao-lote="abrirModalEdicaoLote"
+                    @excluir-lote="excluirLoteConfirmado">
                 </historico-view>
 
-                <!-- TELA 4: GRÁFICOS & ANÁLISES (Admin/Gestor) -->
+                <!-- TELA 4: GRÁFICOS & ANÁLISES (Master/Admin/Gestor) -->
                 <graficos-view 
-                    v-if="abaAtual === 'graficos' && usuarioAtual.cargo !== 'FUNCIONARIO'"
-                    :registros="registros"
+                    v-if="abaAtual === 'graficos' && usuarioAtual.cargo !== 'MEMBRO' && usuarioAtual.cargo !== 'MEMBRO_COMUM' && usuarioAtual.cargo !== 'FUNCIONARIO'"
+                    :registros="todosRegistros.length > 0 ? todosRegistros : registros"
                     :periodo-grafico="periodoGrafico"
                     :usuario="usuarioAtual"
-                    @mudar-periodo="mudarPeriodoGrafico">
+                    @mudar-periodo="periodoGrafico = $event">
                 </graficos-view>
 
-                <!-- TELA 5: PROJETOS & CATEGORIAS (Admin/Gestor) -->
+                <!-- TELA 5: PROJETOS & CATEGORIAS (Master/Admin/Gestor) -->
                 <projetos-categorias-view 
-                    v-if="abaAtual === 'projetos_categorias' && usuarioAtual.cargo !== 'FUNCIONARIO'"
+                    v-if="abaAtual === 'projetos_categorias' && usuarioAtual.cargo !== 'MEMBRO' && usuarioAtual.cargo !== 'MEMBRO_COMUM' && usuarioAtual.cargo !== 'FUNCIONARIO'"
                     :projetos="projetos"
                     :categorias="categorias"
-                    :carregando="carregandoProjetosCategorias"
+                    :carregando="carregandoItemLista"
                     @adicionar-projeto="adicionarProjeto"
                     @excluir-projeto="excluirProjeto"
                     @adicionar-categoria="adicionarCategoria"
                     @excluir-categoria="excluirCategoria">
                 </projetos-categorias-view>
 
-                <!-- TELA 6: GERADOR DE RELATÓRIOS (Admin/Gestor) -->
+                <!-- TELA 6: GERADOR DE RELATÓRIOS (Master/Admin/Gestor) -->
                 <relatorios-view 
-                    v-if="abaAtual === 'relatorios' && usuarioAtual.cargo !== 'FUNCIONARIO'"
+                    v-if="abaAtual === 'relatorios' && usuarioAtual.cargo !== 'MEMBRO' && usuarioAtual.cargo !== 'MEMBRO_COMUM' && usuarioAtual.cargo !== 'FUNCIONARIO'"
                     :membros="membros"
                     :filtro-relatorio="filtroRelatorio"
                     :periodo-relatorio-texto="periodoRelatorioTexto"
@@ -167,33 +175,37 @@
                     :registros-relatorio="registrosRelatorio"
                     :registros-relatorio-ordenados="registrosRelatorioOrdenados"
                     :formatar-data-sheet="formatarDataSheet"
+                    :usuario="usuarioAtual"
                     @aplicar-filtro-rapido="aplicarFiltroRapido"
                     @exportar-csv="exportarCSV"
                     @imprimir-relatorio="imprimirRelatorio">
                 </relatorios-view>
 
-                <!-- TELA 7: GESTÃO DE MEMBROS (Apenas Admin) -->
+                <!-- TELA 7: GESTÃO DE MEMBROS (Master/Admin) -->
                 <membros-view 
-                    v-if="abaAtual === 'membros' && usuarioAtual.cargo === 'ADMINISTRADOR'"
+                    v-if="abaAtual === 'membros' && (usuarioAtual.cargo === 'PROPRIETARIO' || usuarioAtual.cargo === 'ADMINISTRADOR_MASTER' || usuarioAtual.cargo === 'ADMINISTRADOR')"
                     :membros="membros"
+                    :usuario="usuarioAtual"
                     @abrir-modal="modalMembroAberto = true"
                     @alternar-status="alternarStatusMembro"
-                    @remover-membro="removerMembro">
+                    @remover-membro="removerMembro"
+                    @abrir-reset-senha="abrirModalAdminReset">
                 </membros-view>
 
             </div>
         </main>
 
-        <!-- MODAL: CADASTRAR MEMBRO (Apenas Admin) -->
+        <!-- MODAL: CADASTRAR MEMBRO -->
         <modal-membro 
-            v-if="usuarioAtual.cargo === 'ADMINISTRADOR'"
+            v-if="usuarioAtual.cargo === 'PROPRIETARIO' || usuarioAtual.cargo === 'ADMINISTRADOR_MASTER' || usuarioAtual.cargo === 'ADMINISTRADOR'"
             :modal-membro-aberto="modalMembroAberto"
             :enviando-membro="enviandoMembro"
+            :usuario="usuarioAtual"
             @fechar-modal="modalMembroAberto = false"
             @salvar-membro="salvarMembro">
         </modal-membro>
 
-        <!-- MODAL: EDITAR REGISTRO DE HORAS (Admin/Gestor) -->
+        <!-- MODAL: EDITAR REGISTRO INDIVIDUAL -->
         <modal-editar-registro
             :modal-aberto="modalEdicaoAberto"
             :registro="registroParaEdicao"
@@ -204,6 +216,17 @@
             @salvar-edicao="salvarEdicaoRegistro">
         </modal-editar-registro>
 
+        <!-- MODAL: EDITAR REGISTROS EM LOTE -->
+        <modal-editar-lote
+            :modal-aberto="modalEdicaoLoteAberto"
+            :ids-selecionados="idsParaEdicaoLote"
+            :projetos="projetos"
+            :categorias="categorias"
+            :enviando="enviandoEdicaoLote"
+            @fechar="modalEdicaoLoteAberto = false"
+            @salvar-edicao-lote="salvarEdicaoLote">
+        </modal-editar-lote>
+
     </div>
 
 </div>
@@ -213,6 +236,7 @@
 <script src="js/components/ToastContainer.js"></script>
 <script src="js/components/ModalConfirmacao.js"></script>
 <script src="js/components/ModalAlterarSenha.js"></script>
+<script src="js/components/ModalAdminResetSenha.js"></script>
 <script src="js/components/LoginView.js"></script>
 <script src="js/components/Sidebar.js"></script>
 <script src="js/components/Header.js"></script>
@@ -225,6 +249,7 @@
 <script src="js/components/RelatoriosView.js"></script>
 <script src="js/components/ModalMembro.js"></script>
 <script src="js/components/ModalEditarRegistro.js"></script>
+<script src="js/components/ModalEditarLote.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
