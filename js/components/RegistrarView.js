@@ -23,7 +23,7 @@ window.RegistrarViewComponent = {
     },
     computed: {
         podeLancarOutros() {
-            return this.usuario.cargo === 'ADMINISTRADOR_MASTER' || this.usuario.cargo === 'ADMINISTRADOR' || this.usuario.cargo === 'GESTOR';
+            const c = (this.usuario.cargo || '').toUpperCase(); return c === 'PROPRIETARIO' || c === 'ADMINISTRADOR_MASTER' || c === 'ADMINISTRADOR' || c === 'GESTOR';
         }
     },
     methods: {

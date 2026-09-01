@@ -52,6 +52,15 @@
         @salvar-reset="executarAdminResetSenha">
     </modal-admin-reset-senha>
 
+        <!-- MODAL: ALTERAR CARGO (PROPRIETÁRIO) -->
+        <modal-alterar-cargo
+            :modal-aberto="modalAlterarCargoAberto"
+            :membro="membroCargoSelecionado"
+            :enviando="enviandoAlterarCargo"
+            @fechar="modalAlterarCargoAberto = false"
+            @salvar-cargo="executarAlterarCargo">
+        </modal-alterar-cargo>
+
     <!-- TELA DE LOGIN (Se não estiver autenticado) -->
     <login-view 
         v-if="!usuarioAutenticado" 
@@ -134,7 +143,7 @@
                     :membros="membros"
                     :filtro-membro="filtroMembroHist"
                     :paginacao="paginacao"
-                    :pode-editar-excluir="usuarioAtual.cargo === 'ADMINISTRADOR_MASTER' || usuarioAtual.cargo === 'ADMINISTRADOR' || usuarioAtual.cargo === 'GESTOR'"
+                    :pode-editar-excluir="usuarioAtual.cargo === 'PROPRIETARIO' || usuarioAtual.cargo === 'ADMINISTRADOR_MASTER' || usuarioAtual.cargo === 'ADMINISTRADOR' || usuarioAtual.cargo === 'GESTOR'"
                     @mudar-filtro-membro="mudarFiltroMembroHist"
                     @ir-pagina="irParaPagina"
                     @abrir-edicao="abrirModalEdicao"
@@ -159,8 +168,10 @@
                     :categorias="categorias"
                     :carregando="carregandoItemLista"
                     @adicionar-projeto="adicionarProjeto"
+                    @editar-projeto="editarProjeto"
                     @excluir-projeto="excluirProjeto"
                     @adicionar-categoria="adicionarCategoria"
+                    @editar-categoria="editarCategoria"
                     @excluir-categoria="excluirCategoria">
                 </projetos-categorias-view>
 
@@ -189,7 +200,8 @@
                     @abrir-modal="modalMembroAberto = true"
                     @alternar-status="alternarStatusMembro"
                     @remover-membro="removerMembro"
-                    @abrir-reset-senha="abrirModalAdminReset">
+                    @abrir-reset-senha="abrirModalAdminReset"
+                    @abrir-alterar-cargo="abrirModalAlterarCargo">
                 </membros-view>
 
             </div>
@@ -232,24 +244,25 @@
 </div>
 
 <!-- Scripts Carregados Sequencialmente -->
-<script src="js/config.js"></script>
-<script src="js/components/ToastContainer.js"></script>
-<script src="js/components/ModalConfirmacao.js"></script>
-<script src="js/components/ModalAlterarSenha.js"></script>
-<script src="js/components/ModalAdminResetSenha.js"></script>
-<script src="js/components/LoginView.js"></script>
-<script src="js/components/Sidebar.js"></script>
-<script src="js/components/Header.js"></script>
-<script src="js/components/DashboardView.js"></script>
-<script src="js/components/GraficosView.js"></script>
-<script src="js/components/ProjetosCategoriasView.js"></script>
-<script src="js/components/RegistrarView.js"></script>
-<script src="js/components/MembrosView.js"></script>
-<script src="js/components/HistoricoView.js"></script>
-<script src="js/components/RelatoriosView.js"></script>
-<script src="js/components/ModalMembro.js"></script>
-<script src="js/components/ModalEditarRegistro.js"></script>
-<script src="js/components/ModalEditarLote.js"></script>
-<script src="js/app.js"></script>
+<script src="js/config.js?v=3.0"></script>
+<script src="js/components/ToastContainer.js?v=3.0"></script>
+<script src="js/components/ModalConfirmacao.js?v=3.0"></script>
+<script src="js/components/ModalAlterarSenha.js?v=3.0"></script>
+<script src="js/components/ModalAdminResetSenha.js?v=3.0"></script>
+<script src="js/components/ModalAlterarCargo.js?v=3.0"></script>
+<script src="js/components/LoginView.js?v=3.0"></script>
+<script src="js/components/Sidebar.js?v=3.0"></script>
+<script src="js/components/Header.js?v=3.0"></script>
+<script src="js/components/DashboardView.js?v=3.0"></script>
+<script src="js/components/GraficosView.js?v=3.0"></script>
+<script src="js/components/ProjetosCategoriasView.js?v=3.0"></script>
+<script src="js/components/RegistrarView.js?v=3.0"></script>
+<script src="js/components/MembrosView.js?v=3.0"></script>
+<script src="js/components/HistoricoView.js?v=3.0"></script>
+<script src="js/components/RelatoriosView.js?v=3.0"></script>
+<script src="js/components/ModalMembro.js?v=3.0"></script>
+<script src="js/components/ModalEditarRegistro.js?v=3.0"></script>
+<script src="js/components/ModalEditarLote.js?v=3.0"></script>
+<script src="js/app.js?v=3.0"></script>
 </body>
 </html>

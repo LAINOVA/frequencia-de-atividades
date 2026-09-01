@@ -3,7 +3,7 @@ window.MembrosViewComponent = {
         membros: { type: Array, default: () => [] },
         usuario: { type: Object, default: () => ({ cargo: '' }) }
     },
-    emits: ['abrir-modal', 'alternar-status', 'remover-membro', 'abrir-reset-senha'],
+    emits: ['abrir-modal', 'alternar-status', 'remover-membro', 'abrir-reset-senha', 'abrir-alterar-cargo'],
     computed: {
         isProprietario() {
             const c = (this.usuario.cargo || '').toUpperCase();
@@ -24,7 +24,7 @@ window.MembrosViewComponent = {
             <div class="flex justify-between items-center">
                 <div>
                     <h3 class="text-xl font-bold text-slate-800">Gestão de Membros & Permissões</h3>
-                    <p class="text-xs text-slate-500">Cadastre e gerencie as contas e permissões de acesso da LAINOVA.</p>
+                    <p class="text-xs text-slate-500">Cadastre e gerencie as contas, senhas e níveis de acesso da LAINOVA.</p>
                 </div>
                 <button @click="$emit('abrir-modal')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg font-medium shadow flex items-center justify-center gap-2 transition text-sm">
                     <i class="fa-solid fa-user-plus"></i> Adicionar Membro
@@ -67,9 +67,9 @@ window.MembrosViewComponent = {
                                     <span class="px-2.5 py-1 rounded-full text-xs font-bold uppercase"
                                           :class="{
                                               'bg-amber-100 text-amber-800 border border-amber-300': m.cargo === 'PROPRIETARIO' || m.cargo === 'ADMINISTRADOR_MASTER',
-                                              'bg-purple-100 text-purple-700': m.cargo === 'ADMINISTRADOR',
-                                              'bg-blue-100 text-blue-700': m.cargo === 'GESTOR',
-                                              'bg-slate-100 text-slate-700': m.cargo === 'MEMBRO' || m.cargo === 'FUNCIONARIO'
+                                              'bg-purple-100 text-purple-700 border border-purple-200': m.cargo === 'ADMINISTRADOR',
+                                              'bg-blue-100 text-blue-700 border border-blue-200': m.cargo === 'GESTOR',
+                                              'bg-slate-100 text-slate-700 border border-slate-200': m.cargo === 'MEMBRO' || m.cargo === 'FUNCIONARIO'
                                           }">
                                         {{ formatarCargo(m.cargo) }}
                                     </span>
@@ -82,6 +82,13 @@ window.MembrosViewComponent = {
                                 </td>
                                 <td class="px-6 py-4 text-right">
                                     <div class="flex items-center justify-end gap-2">
+                                        <!-- Botão do Proprietário: Alterar Cargo de Membro para Administrador e vice-versa -->
+                                        <button v-if="isProprietario && m.cargo !== 'PROPRIETARIO' && m.cargo !== 'ADMINISTRADOR_MASTER'"
+                                                @click="$emit('abrir-alterar-cargo', m)"
+                                                class="text-xs px-2.5 py-1.5 rounded-lg font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition flex items-center gap-1 shadow-sm" title="Mudar Cargo (Membro <-> Administrador)">
+                                            <i class="fa-solid fa-user-gear text-xs"></i> Cargo
+                                        </button>
+
                                         <!-- Redefinir Senha (Apenas Proprietário) -->
                                         <button v-if="isProprietario" @click="$emit('abrir-reset-senha', m)"
                                                 class="text-xs px-2.5 py-1.5 rounded-lg font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition flex items-center gap-1" title="Redefinir Senha do Membro">
@@ -96,7 +103,7 @@ window.MembrosViewComponent = {
                                             {{ m.ativo ? 'Desativar' : 'Ativar' }}
                                         </button>
 
-                                        <!-- Excluir (Apenas Proprietário pode excluir, e não pode excluir a si mesmo) -->
+                                        <!-- Excluir (Apenas Proprietário pode excluir) -->
                                         <button v-if="isProprietario && m.cargo !== 'PROPRIETARIO' && m.cargo !== 'ADMINISTRADOR_MASTER'"
                                                 @click="$emit('remover-membro', m.login)" 
                                                 class="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition" title="Excluir Membro">

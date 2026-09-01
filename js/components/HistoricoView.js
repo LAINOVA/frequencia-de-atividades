@@ -9,6 +9,12 @@ window.HistoricoViewComponent = {
         podeEditarExcluir: { type: Boolean, default: false }
     },
     emits: ['mudar-filtro-membro', 'ir-pagina', 'abrir-edicao', 'excluir-registro', 'abrir-edicao-lote', 'excluir-lote'],
+    computed: {
+        isMembroComum() {
+            const c = (this.cargoUsuario || '').toUpperCase();
+            return c === 'MEMBRO' || c === 'MEMBRO_COMUM' || c === 'FUNCIONARIO';
+        }
+    },
     data() {
         return {
             selecionados: [],
@@ -34,7 +40,7 @@ window.HistoricoViewComponent = {
         <div class="space-y-6">
             <!-- Barra Superior de Filtros e Ações em Lote -->
             <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div v-if="cargoUsuario !== 'FUNCIONARIO'" class="flex items-center gap-2 w-full md:w-auto">
+                <div v-if="!isMembroComum" class="flex items-center gap-2 w-full md:w-auto">
                     <i class="fa-solid fa-filter text-slate-400"></i>
                     <span class="text-sm font-semibold text-slate-700 shrink-0">Filtrar por Membro:</span>
                     <select :value="filtroMembro" @change="$emit('mudar-filtro-membro', $event.target.value)"
@@ -69,7 +75,7 @@ window.HistoricoViewComponent = {
                                     <input type="checkbox" v-model="selecionarTodos" @change="alternarSelecionarTodos" class="rounded text-emerald-600 focus:ring-emerald-500" />
                                 </th>
                                 <th class="px-6 py-4 font-semibold uppercase tracking-wider">Data</th>
-                                <th class="px-6 py-4 font-semibold uppercase tracking-wider" v-if="cargoUsuario !== 'FUNCIONARIO'">Membro</th>
+                                <th class="px-6 py-4 font-semibold uppercase tracking-wider" v-if="!isMembroComum">Membro</th>
                                 <th class="px-6 py-4 font-semibold uppercase tracking-wider">Projeto</th>
                                 <th class="px-6 py-4 font-semibold uppercase tracking-wider">Categoria</th>
                                 <th class="px-6 py-4 font-semibold uppercase tracking-wider text-right">Horas</th>
@@ -83,7 +89,7 @@ window.HistoricoViewComponent = {
                                     <input type="checkbox" :value="r.ID" v-model="selecionados" class="rounded text-emerald-600 focus:ring-emerald-500" />
                                 </td>
                                 <td class="px-6 py-4 text-slate-500 font-mono text-xs">{{ formatarDataSheet(r.Data) }}</td>
-                                <td class="px-6 py-4 font-semibold text-slate-700" v-if="cargoUsuario !== 'FUNCIONARIO'">{{ r.Nome_Membro }}</td>
+                                <td class="px-6 py-4 font-semibold text-slate-700" v-if="!isMembroComum">{{ r.Nome_Membro }}</td>
                                 <td class="px-6 py-4"><span class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-xs font-bold">{{ r.Projeto || 'Atividade' }}</span></td>
                                 <td class="px-6 py-4"><span class="bg-blue-50 border border-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">{{ r.Categoria }}</span></td>
                                 <td class="px-6 py-4 font-bold text-slate-800 text-right">{{ r.Horas_Gastas }}h</td>
