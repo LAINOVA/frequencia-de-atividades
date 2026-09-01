@@ -335,13 +335,15 @@ const app = createApp({
             }
         };
 
-        const editarProjeto = async ({ nomeAntigo, nomeNovo }) => {
+        const editarProjeto = async (params) => {
             carregandoItemLista.value = true;
             try {
+                const ant = params.nomeAntigo || params.p_nome_antigo || '';
+                const nov = params.novoNome || params.nomeNovo || params.p_nome_novo || '';
                 const res = await chamarBackend('editarProjeto', {
                     p_token: tokenSessao.value,
-                    p_nome_antigo: nomeAntigo,
-                    p_nome_novo: nomeNovo
+                    p_nome_antigo: ant,
+                    p_nome_novo: nov
                 });
                 adicionarToast(res.mensagem || `Projeto renomeado para '${nomeNovo}'!`, "sucesso");
                 await fetchDados(paginacao.value.paginaAtual);
@@ -385,13 +387,15 @@ const app = createApp({
             }
         };
 
-        const editarCategoria = async ({ nomeAntigo, nomeNovo }) => {
+        const editarCategoria = async (params) => {
             carregandoItemLista.value = true;
             try {
+                const ant = params.nomeAntigo || params.p_nome_antigo || '';
+                const nov = params.novoNome || params.nomeNovo || params.p_nome_novo || '';
                 const res = await chamarBackend('editarCategoria', {
                     p_token: tokenSessao.value,
-                    p_nome_antigo: nomeAntigo,
-                    p_nome_novo: nomeNovo
+                    p_nome_antigo: ant,
+                    p_nome_novo: nov
                 });
                 adicionarToast(res.mensagem || `Categoria renomeada para '${nomeNovo}'!`, "sucesso");
                 await fetchDados(paginacao.value.paginaAtual);
@@ -567,9 +571,10 @@ const app = createApp({
         const salvarEdicaoRegistro = async (payload) => {
             enviandoEdicao.value = true;
             try {
+                const idReg = payload.idRegistro || payload.id || payload.ID || '';
                 await chamarBackend('editarRegistro', {
                     p_token: tokenSessao.value,
-                    p_id_registro: payload.id,
+                    p_id_registro: idReg,
                     p_data: payload.data,
                     p_projeto: payload.projeto,
                     p_categoria: payload.categoria,
@@ -720,17 +725,31 @@ const app = createApp({
 
         const acumuladoMembros = computed(() => {
             const lista = todosRegistros.value.length > 0 ? todosRegistros.value : registros.value;
-            const mapa = {};
-            membros.value.forEach(m => { mapa[m.nome] = 0; });
+            const mapaHoras = {};
+            const mapaCargos = {};
+
+            membros.value.forEach(m => {
+                mapaHoras[m.nome] = 0;
+                mapaCargos[m.nome] = m.cargo || 'MEMBRO';
+            });
+
             lista.forEach(r => {
-                if (r.Nome_Membro) {
-                    mapa[r.Nome_Membro] = (mapa[r.Nome_Membro] || 0) + (parseFloat(r.Horas_Gastas) || 0);
+                const nome = r.Nome_Membro || r.nome_membro;
+                if (nome) {
+                    const horas = parseFloat(r.Horas_Gastas || r.horas_gastas) || 0;
+                    mapaHoras[nome] = (mapaHoras[nome] || 0) + horas;
                 }
             });
-            return Object.keys(mapa).map(nome => ({
-                nome,
-                horas: parseFloat(mapa[nome].toFixed(1))
-            })).sort((a, b) => b.horas - a.horas);
+
+            return Object.keys(mapaHoras).map(nome => {
+                const total = mapaHoras[nome] || 0;
+                return {
+                    nome,
+                    cargo: mapaCargos[nome] || 'MEMBRO',
+                    horas: parseFloat(total.toFixed(1)),
+                    aprovadas: total.toFixed(1)
+                };
+            }).sort((a, b) => b.horas - a.horas);
         });
 
         // Relatórios

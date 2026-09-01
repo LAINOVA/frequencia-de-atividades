@@ -2,14 +2,18 @@ window.DashboardViewComponent = {
     props: {
         membros: { type: Array, default: () => [] },
         acumuladoMembros: { type: Array, default: () => [] },
-        totalHorasGeral: { type: String, default: '0.0' },
+        totalHorasGeral: { type: [String, Number], default: '0.0' },
         totalLancamentos: { type: Number, default: 0 },
         cargoUsuario: { type: String, default: '' }
     },
     computed: {
         isMembroComum() {
             const c = (this.cargoUsuario || '').toUpperCase();
-            return c === 'MEMBRO' || c === 'FUNCIONARIO';
+            return c === 'MEMBRO' || c === 'MEMBRO_COMUM' || c === 'FUNCIONARIO';
+        },
+        totalHorasExibicao() {
+            const val = parseFloat(this.totalHorasGeral);
+            return isNaN(val) ? '0.0' : val.toFixed(1);
         }
     },
     methods: {
@@ -19,6 +23,17 @@ window.DashboardViewComponent = {
             if (up === 'ADMINISTRADOR') return 'Administrador';
             if (up === 'GESTOR') return 'Gestor';
             return 'Membro';
+        },
+        formatarHoras(m) {
+            if (m.aprovadas !== undefined && m.aprovadas !== null && m.aprovadas !== '') {
+                const num = parseFloat(m.aprovadas);
+                return isNaN(num) ? '0.0' : num.toFixed(1);
+            }
+            if (m.horas !== undefined && m.horas !== null) {
+                const num = parseFloat(m.horas);
+                return isNaN(num) ? '0.0' : num.toFixed(1);
+            }
+            return '0.0';
         }
     },
     template: `
@@ -39,7 +54,7 @@ window.DashboardViewComponent = {
                     </div>
                     <div>
                         <p class="text-sm font-medium text-slate-500">{{ isMembroComum ? 'As Minhas Horas Lançadas' : 'Total de Horas Registadas' }}</p>
-                        <p class="text-2xl font-bold text-slate-800">{{ totalHorasGeral }}h</p>
+                        <p class="text-2xl font-bold text-slate-800">{{ totalHorasExibicao }}h</p>
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center gap-4">
@@ -70,7 +85,7 @@ window.DashboardViewComponent = {
                             <tr v-for="m in acumuladoMembros" :key="m.nome" class="hover:bg-slate-50 transition-colors">
                                 <td class="px-6 py-4 font-bold text-slate-700">{{ m.nome }}</td>
                                 <td class="px-6 py-4 text-slate-600">{{ formatarCargo(m.cargo) }}</td>
-                                <td class="px-6 py-4 text-right text-emerald-600 font-bold text-base">{{ m.aprovadas }}h</td>
+                                <td class="px-6 py-4 text-right text-emerald-600 font-bold text-base">{{ formatarHoras(m) }}h</td>
                             </tr>
                         </tbody>
                     </table>
